@@ -1,0 +1,53 @@
+name: Bevaka lediga tider
+
+on:
+  schedule:
+    - cron: "*/15 5-20 * * *"
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: "Spara HTML och skärmdumpar för felsökning"
+        type: boolean
+        default: false
+
+jobs:
+  bevaka:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installera Playwright
+        run: |
+          pip install playwright
+          python -m playwright install --with-deps chromium
+
+      - name: Hämta tidigare sedda tider
+        uses: actions/cache/restore@v4
+        with:
+          path: sedda_tider.json
+          key: sedda-tider-${{ github.run_id }}
+          restore-keys: sedda-tider-
+
+      - name: Kolla lediga tider
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: python bevaka_tider.py ${{ inputs.debug && '--debug' || '' }}
+
+      - name: Spara sedda tider
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: sedda_tider.json
+          key: sedda-tider-${{ github.run_id }}
+
+      - name: Ladda upp felsökningsfiler
+        if: ${{ inputs.debug }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug
+          path: debug/
