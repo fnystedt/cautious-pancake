@@ -145,6 +145,15 @@ def formatera(datum_iso, tid):
     return f"{VECKODAGAR[d.weekday()]} {d.day} {MANADSNAMN[d.month - 1]} kl {tid}"
 
 
+async def vanta_klart(page):
+    """Väntar tills sidan lugnat sig, men utan att hänga om sidan pollar i bakgrunden."""
+    try:
+        await page.wait_for_load_state("networkidle", timeout=10000)
+    except Exception:
+        pass
+    await page.wait_for_timeout(2500)
+
+
 async def hamta_tider(debug=False):
     from playwright.async_api import async_playwright
 
@@ -158,7 +167,16 @@ async def hamta_tider(debug=False):
         browser = await p.chromium.launch()
         page = await browser.new_page(locale="sv-SE", timezone_id="Europe/Stockholm",
                                       viewport={"width": 420, "height": 900})
-        await page.goto(URL, wait_until="networkidle", timeout=60000)
+        try:
+            await page.goto(URL, wait_until="domcontentloaded", timeout=60000)
+        except Exception as e:
+            raise RuntimeError(
+                "Sidan svarade inte alls inom 60 s. Troligen blockerar sajten "
+                f"serverns IP-adress (t.ex. GitHubs molnservrar). Ursprungligt fel: {e}")
+        await vanta_klart(page)
+        if debug:
+            print(f"Sidtitel: {await page.title()!r}")
+            print("Sidans text (början):\n" + (await page.evaluate("document.body.innerText"))[:1500])
 
         for sida in range(MAX_SIDOR):
             if debug:
@@ -196,11 +214,7 @@ async def hamta_tider(debug=False):
             if debug:
                 print(f"  klickar på '{knapp}'")
             await page.click("[data-bevakning-nasta]")
-            try:
-                await page.wait_for_load_state("networkidle", timeout=15000)
-            except Exception:
-                pass
-            await page.wait_for_timeout(1500)
+            await vanta_klart(page)
             if await page.evaluate("document.body.innerText") == fore:
                 break
         await browser.close()
